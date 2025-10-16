@@ -35,8 +35,8 @@ jobs:
       - name: Artefakte vorbereiten
         run: |
           mkdir -p dist
-          cp "heating-orchestrator/${{ steps.findjar.outputs.jar }}" dist/app.jar
-          (cd dist && shasum -a 256 app.jar | awk '{print $1}') > dist/app.jar.sha256
+          cp "servlets/heimautomatisierung.heating-orchestrator/${{ steps.findjar.outputs.jar }}" dist/heating-orchestrator.jar
+          (cd dist && shasum -a 256 app.jar | awk '{print $1}') > dist/heating-orchestrator.jar.sha256
 
       - name: Release @ PRODUCTION aktualisieren
         uses: softprops/action-gh-release@v2
