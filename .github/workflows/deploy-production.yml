@@ -21,12 +21,12 @@ jobs:
           cache: maven
 
       - name: Build (Maven) im Unterordner
-        working-directory: heating-orchestrator
+        working-directory: servlets/heimautomatisierung.heating-orchestrator
         run: mvn -B -DskipTests package
 
       - name: Artefakt finden
         id: findjar
-        working-directory: heating-orchestrator
+        working-directory: servlets/heimautomatisierung.heating-orchestrator
         run: |
           jar=$(ls -1 target/*-SNAPSHOT.jar 2>/dev/null || true)
           if [ -z "$jar" ]; then jar=$(ls -1 target/*.jar | head -n1); fi
