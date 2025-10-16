@@ -1,0 +1,52 @@
+name: Build & Publish PRODUCTION (pull-based)
+
+on:
+  push:
+    tags:
+      - PRODUCTION
+
+jobs:
+  build-and-release:
+    if: github.ref == 'refs/tags/PRODUCTION'
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+
+      # ===== Maven (falls Gradle, 2 Schritte unten austauschen) =====
+      - name: Build
+        run: mvn -B -DskipTests package
+
+      - id: findjar
+        run: |
+          jar=$(ls -1 target/*-SNAPSHOT.jar 2>/dev/null || true)
+          if [ -z "$jar" ]; then jar=$(ls -1 target/*.jar | head -n1); fi
+          echo "jar=$jar" >> $GITHUB_OUTPUT
+          sha=$(git rev-parse HEAD)
+          echo "sha=$sha" >> $GITHUB_OUTPUT
+
+      - name: Prepare artifacts
+        run: |
+          mkdir -p dist
+          cp "${{ steps.findjar.outputs.jar }}" dist/app.jar
+          (cd dist && shasum -a 256 app.jar | awk '{print $1}') > dist/app.jar.sha256
+
+      # Release (Tag: PRODUCTION) anlegen oder aktualisieren
+      - name: Create or update GitHub Release @ PRODUCTION
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: PRODUCTION
+          name: PRODUCTION
+          body: "Automated build for PRODUCTION @ ${{ steps.findjar.outputs.sha }}"
+          draft: false
+          prerelease: false
+          files: |
+            dist/app.jar
+            dist/app.jar.sha256
