@@ -1,17 +1,15 @@
-name: Deploy PRODUCTION
+name: Build & Publish PRODUCTION (pull-based)
 
 on:
   push:
     tags:
       - PRODUCTION
-  workflow_dispatch: {}   # optional: manueller Start möglich
 
 jobs:
-  build:
+  build-and-release:
     if: github.ref == 'refs/tags/PRODUCTION'
     runs-on: ubuntu-latest
-    outputs:
-      sha: ${{ steps.meta.outputs.sha }}
+
     steps:
       - uses: actions/checkout@v4
         with: { fetch-depth: 0 }
@@ -22,75 +20,33 @@ jobs:
           java-version: '21'
           cache: maven
 
-      - id: meta
-        run: echo "sha=$(git rev-parse HEAD)" >> $GITHUB_OUTPUT
-
-      # ===== Maven =====
-      - name: Build (Maven)
+      # ===== Maven (falls Gradle, 2 Schritte unten austauschen) =====
+      - name: Build
         run: mvn -B -DskipTests package
+
       - id: findjar
         run: |
           jar=$(ls -1 target/*-SNAPSHOT.jar 2>/dev/null || true)
           if [ -z "$jar" ]; then jar=$(ls -1 target/*.jar | head -n1); fi
           echo "jar=$jar" >> $GITHUB_OUTPUT
+          sha=$(git rev-parse HEAD)
+          echo "sha=$sha" >> $GITHUB_OUTPUT
 
-      # ===== Gradle (falls du Gradle nutzt, ersetz die 2 Schritte oben durch diese 2) =====
-      # - name: Build (Gradle)
-      #   run: ./gradlew -x test build
-      # - id: findjar
-      #   run: |
-      #     jar=$(ls -1 build/libs/*[^plain].jar 2>/dev/null || ls -1 build/libs/*.jar | head -n1)
-      #     echo "jar=$jar" >> $GITHUB_OUTPUT
+      - name: Prepare artifacts
+        run: |
+          mkdir -p dist
+          cp "${{ steps.findjar.outputs.jar }}" dist/app.jar
+          (cd dist && shasum -a 256 app.jar | awk '{print $1}') > dist/app.jar.sha256
 
-      - uses: actions/upload-artifact@v4
+      # Release (Tag: PRODUCTION) anlegen oder aktualisieren
+      - name: Create or update GitHub Release @ PRODUCTION
+        uses: softprops/action-gh-release@v2
         with:
-          name: app
-          path: ${{ steps.findjar.outputs.jar }}
-
-  deploy:
-    if: github.ref == 'refs/tags/PRODUCTION'
-    needs: build
-    runs-on: ubuntu-latest
-    environment: production
-    steps:
-      - uses: actions/download-artifact@v4
-        with: { name: app, path: app }
-
-      - name: Copy to server
-        uses: appleboy/scp-action@v0.1.7
-        with:
-          host: ${{ secrets.HOST }}
-          username: ${{ secrets.SSH_USER }}
-          key: ${{ secrets.SSH_KEY }}
-          port: ${{ secrets.SSH_PORT || 22 }}
-          source: "app/*"
-          target: "/tmp/heating-orchestrator-${{ needs.build.outputs.sha }}.jar"
-          strip_components: 1
-
-      - name: Deploy on server (validate PRODUCTION)
-        uses: appleboy/ssh-action@v1.2.0
-        with:
-          host: ${{ secrets.HOST }}
-          username: ${{ secrets.SSH_USER }}
-          key: ${{ secrets.SSH_KEY }}
-          port: ${{ secrets.SSH_PORT || 22 }}
-          script: |
-            set -euo pipefail
-            APP_DIR="/opt/heating-orchestrator"
-            SHA="${{ needs.build.outputs.sha }}"
-            REL="$APP_DIR/releases/$SHA"
-
-            # Härtung: prüfe, dass Artefakt-SHA exakt dem Remote-PRODUCTION-Tag entspricht
-            REMOTE_TAG_SHA=$(git ls-remote --tags https://github.com/${{ github.repository }} PRODUCTION | awk '{print $1}')
-            if [ -z "$REMOTE_TAG_SHA" ] || [ "$REMOTE_TAG_SHA" != "$SHA" ]; then
-              echo "ABORT: Artifact ($SHA) != remote PRODUCTION ($REMOTE_TAG_SHA)."
-              exit 1
-            fi
-
-            sudo mkdir -p "$REL"
-            sudo mv "/tmp/heating-orchestrator-${SHA}.jar" "$REL/app.jar"
-            sudo ln -sfn "$REL" "$APP_DIR/current"
-            sudo systemctl restart heating-orchestrator
-            sleep 2
-            sudo systemctl is-active --quiet heating-orchestrator
-            echo "Deployed PRODUCTION @ $SHA"
+          tag_name: PRODUCTION
+          name: PRODUCTION
+          body: "Automated build for PRODUCTION @ ${{ steps.findjar.outputs.sha }}"
+          draft: false
+          prerelease: false
+          files: |
+            dist/app.jar
+            dist/app.jar.sha256
