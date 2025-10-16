@@ -2,12 +2,12 @@ name: Build & Publish PRODUCTION (pull-based)
 
 on:
   push:
-    tags:
-      - PRODUCTION
+    tags: [ PRODUCTION ]
+  workflow_dispatch: {}
 
+# Für Release-Upload nötig
 permissions:
   contents: write
-
 
 jobs:
   build-and-release:
@@ -15,10 +15,13 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
-        with: { fetch-depth: 0 }
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-      - uses: actions/setup-java@v4
+      - name: Setup Java
+        uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '21'
@@ -30,17 +33,35 @@ jobs:
 
       - name: Artefakt finden
         id: findjar
+        shell: bash
         working-directory: servlets/heimautomatisierung.heating-orchestrator
         run: |
+          set -euo pipefail
           jar=$(ls -1 target/*-SNAPSHOT.jar 2>/dev/null || true)
           if [ -z "$jar" ]; then jar=$(ls -1 target/*.jar | head -n1); fi
-          echo "jar=$jar" >> $GITHUB_OUTPUT
+          [ -n "$jar" ] || { echo "Kein JAR gefunden"; exit 1; }
+          echo "jar=$jar" >> "$GITHUB_OUTPUT"
 
       - name: Artefakte vorbereiten
+        shell: bash
         run: |
+          set -euo pipefail
           mkdir -p dist
+          # Jar in ein definiertes Dateiname kopieren
           cp "servlets/heimautomatisierung.heating-orchestrator/${{ steps.findjar.outputs.jar }}" dist/heating-orchestrator.jar
-          (cd dist && shasum -a 256 app.jar | awk '{print $1}') > dist/heating-orchestrator.jar.sha256
+          # SHA256 nur als Hash-Wert (ohne Dateinamen) erzeugen
+          sha256sum dist/heating-orchestrator.jar | awk '{print $1}' > dist/heating-orchestrator.jar.sha256
+          # Sanity-Checks: keine 0-Byte-Dateien
+          [ -s dist/heating-orchestrator.jar ] || { echo "JAR ist leer!"; exit 1; }
+          [ -s dist/heating-orchestrator.jar.sha256 ] || { echo "SHA256 ist leer!"; exit 1; }
+
+      - name: Checksum verifizieren (Lokaltest)
+        shell: bash
+        run: |
+          set -euo pipefail
+          calc=$(sha256sum dist/heating-orchestrator.jar | awk '{print $1}')
+          want=$(tr -d '[:space:]' < dist/heating-orchestrator.jar.sha256)
+          [ "$calc" = "$want" ] || { echo "Checksum mismatch ($calc != $want)"; exit 1; }
 
       - name: Release @ PRODUCTION aktualisieren
         uses: softprops/action-gh-release@v2
