@@ -20,33 +20,30 @@ jobs:
           java-version: '21'
           cache: maven
 
-      # ===== Maven (falls Gradle, 2 Schritte unten austauschen) =====
-      - name: Build
+      - name: Build (Maven) im Unterordner
+        working-directory: servlets/heimautomatisierung.heating-orchestrator
         run: mvn -B -DskipTests package
 
-      - id: findjar
+      - name: Artefakt finden
+        id: findjar
+        working-directory: servlets/heimautomatisierung.heating-orchestrator
         run: |
           jar=$(ls -1 target/*-SNAPSHOT.jar 2>/dev/null || true)
           if [ -z "$jar" ]; then jar=$(ls -1 target/*.jar | head -n1); fi
           echo "jar=$jar" >> $GITHUB_OUTPUT
-          sha=$(git rev-parse HEAD)
-          echo "sha=$sha" >> $GITHUB_OUTPUT
 
-      - name: Prepare artifacts
+      - name: Artefakte vorbereiten
         run: |
           mkdir -p dist
-          cp "${{ steps.findjar.outputs.jar }}" dist/app.jar
+          cp "heating-orchestrator/${{ steps.findjar.outputs.jar }}" dist/app.jar
           (cd dist && shasum -a 256 app.jar | awk '{print $1}') > dist/app.jar.sha256
 
-      # Release (Tag: PRODUCTION) anlegen oder aktualisieren
-      - name: Create or update GitHub Release @ PRODUCTION
+      - name: Release @ PRODUCTION aktualisieren
         uses: softprops/action-gh-release@v2
         with:
           tag_name: PRODUCTION
           name: PRODUCTION
-          body: "Automated build for PRODUCTION @ ${{ steps.findjar.outputs.sha }}"
-          draft: false
-          prerelease: false
+          body: "Automated build for PRODUCTION"
           files: |
             dist/app.jar
             dist/app.jar.sha256
