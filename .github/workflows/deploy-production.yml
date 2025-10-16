@@ -45,5 +45,5 @@ jobs:
           name: PRODUCTION
           body: "Automated build for PRODUCTION"
           files: |
-            dist/app.jar
-            dist/app.jar.sha256
+            dist/heating-orchestrator.jar
+            dist/heating-orchestrator.jar.sha256
